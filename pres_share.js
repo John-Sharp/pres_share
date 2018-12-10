@@ -26,7 +26,7 @@ var PdfDisplayer = function (){
                 viewport: viewport
             };
             var renderTask = page.render(renderContext);
-            renderTask.then(function () {
+            renderTask.promise.then(function () {
                 console.log('Page rendered');
             });
         });
@@ -55,6 +55,11 @@ var PdfDisplayer = function (){
         },
         "getPageNumber" : function () {
             return pageNumber;
+        },
+        "setPageNumber" : function (p) {
+            pageNumber = p;
+            console.log(pageNumber);
+            showPage(pageNumber);
         },
     };
 
@@ -89,7 +94,7 @@ var a = function() {
 
         socket.addEventListener('message', function (event) {
             console.log('Message from server ', event.data);
-            // incrementPage();
+            pdfDisplayer.setPageNumber(parseInt(event.data));
         });
     };
 

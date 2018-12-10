@@ -42,13 +42,17 @@ class PresShareServer(http.server.SimpleHTTPRequestHandler):
         join_token = urllib.parse.parse_qs(req_data.decode("utf8"))['joinToken'][0]
         join_token = uuid.UUID(join_token)
 
-        response_data = presentation_library[join_token]
-        self.send_response(200)
-        self.send_header('Content-Length', len(response_data))
-        self.send_header('Content-Type', 'application/pdf')
-        self.send_header('Connection', 'close')
-        self.end_headers()
-        self.wfile.write(response_data)
+        response_data = presentation_library.get(join_token)
+        if response_data:
+            self.send_response(200)
+            self.send_header('Content-Length', len(response_data))
+            self.send_header('Content-Type', 'application/pdf')
+            self.send_header('Connection', 'close')
+            self.end_headers()
+            self.wfile.write(response_data)
+            return
+        else:
+            self.send_response(404)
 
     def handleSetPageRequest(self):
         req_data = self.rfile.read(int(self.headers["Content-Length"]))
@@ -59,6 +63,9 @@ class PresShareServer(http.server.SimpleHTTPRequestHandler):
         page_number = int(page_number)
 
         # TODO get web sockets for join_token, and on each of them send page_number
+        join_token_websockets[join_token][0] = page_number
+        global loop
+        loop.call_soon_threadsafe(join_token_websockets[join_token][1].set)
 
 async def send_message(ws, msg):
     await ws.send(msg)
@@ -68,18 +75,13 @@ async def producer_handler(websocket, path):
     join_token = json.loads(data)['joinToken']
     join_token = uuid.UUID(join_token)
 
-    print("product")
-    await websocket.send("hi there")
-
     if not join_token_websockets.get(join_token):
-        join_token_websockets[join_token] = asyncio.Event() # set() 
+        join_token_websockets[join_token] = [None, asyncio.Event()] # set() 
 
-    print(join_token_websockets[join_token]) 
     while True:
-        print("here")
-        await join_token_websockets[join_token].wait()
-        await websocket.send("hi there")
-        join_token_websockets[join_token].clear()
+        await join_token_websockets[join_token][1].wait()
+        await websocket.send(str(join_token_websockets[join_token][0]))
+        join_token_websockets[join_token][1].clear()
 
 def run_http_server():
     server_address = ('', 8000)
@@ -88,6 +90,7 @@ def run_http_server():
 
 start_server = websockets.serve(producer_handler, 'localhost', 8765)
 
+loop = asyncio.get_event_loop()
 asyncio.get_event_loop().run_in_executor(None, run_http_server)
 asyncio.get_event_loop().run_until_complete(start_server)
 asyncio.get_event_loop().run_forever()
